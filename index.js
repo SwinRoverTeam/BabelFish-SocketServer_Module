@@ -14,16 +14,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const ws_1 = __importDefault(require("ws"));
-const { autoDetect } = require('@serialport/bindings-cpp');
 const { ReadlineParser } = require('@serialport/parser-readline');
 const serialport_1 = require("serialport");
-const binding = autoDetect();
-function listPorts() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const ports = yield binding.list();
-        return ports;
-    });
-}
 const Datatypes = [
     'int8',
     'uint8',
@@ -64,13 +56,12 @@ class BabelTranslator {
     startSerial() {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const ports = yield listPorts();
-                console.log(ports);
                 // some condition to find the right port
                 const portName = 'COM7'; // Replace with logic to find the correct port
-                this.serialPort = yield openPort(portName, 9600);
+                this.serialPort = yield openPort(portName, 115200);
                 this.parser = this.serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
                 this.parser.on('data', this.handleSerialMessage.bind(this));
+                this.serialPort.write('RQT:0x01:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
             }
             catch (error) {
                 console.error('Failed to start serial port:', error);
