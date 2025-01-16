@@ -236,7 +236,7 @@ function crackValue(value: string, datatype: string, byteNo: number) {
             //return value.split('').map(char => '0x' + char.charCodeAt(0).toString(16).padStart(2, '0'));
             break;
         case 'int32':
-            
+
             tmp = parseInt(value).toString(16);
             while (tmp.length < byteNo * 2) {
                 tmp = '0' + tmp;
@@ -300,13 +300,11 @@ function combineValue(valueArr: string[], datatype: string) {
         //unsupported
 
         case 'fl32':
-            //4 bytes forget the first occurence of 0x
-            tmp = valueArr
+            // 4 bytes, forget the first occurrence of 0x
+            tmp = valueArr.slice(1); // Create a new array without the first element
             console.log(tmp);
             let fl32buffer = new ArrayBuffer(4);
             let fl32view = new DataView(fl32buffer);
-            //remove first location
-            tmp.shift();
             let fl32 = tmp.map(byte => parseInt(byte, 16));
             fl32.forEach((byte, index) => {
                 fl32view.setInt8(index, byte);
@@ -314,6 +312,6 @@ function combineValue(valueArr: string[], datatype: string) {
             return parseFloat(fl32view.getFloat32(0).toPrecision(6));
         case 'fl64':
             //Unsuppported
-            break;  
+            break;
     }
 }
