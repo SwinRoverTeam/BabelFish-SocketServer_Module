@@ -270,6 +270,8 @@ function crackValue(value: string, datatype: string, byteNo: number) {
 function combineValue(valueArr: string[], datatype: string) {
     //returns a string of the combined value from a string byte array
     let tmp;
+    console.log(datatype);
+    console.log(valueArr);
     switch (datatype) {
         case 'raw':
 
