@@ -256,7 +256,7 @@ function combineValue(valueArr, datatype) {
         case 'fl16':
         //minimum 2 bytes
         //unsupported
-        case 'fl32':
+        case 'float32':
             // 4 bytes, forget the first occurrence of 0x
             tmp = valueArr.slice(1); // Create a new array without the first element
             console.log(tmp);
