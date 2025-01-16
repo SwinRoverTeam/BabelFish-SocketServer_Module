@@ -1,14 +1,5 @@
 "use strict";
 //index.ts
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -43,30 +34,26 @@ function openPort(port, baud) {
         });
     });
 }
-function main() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const translator = new BabelTranslator();
-        yield translator.startSerial();
-    });
+async function main() {
+    const translator = new BabelTranslator();
+    await translator.startSerial();
 }
 class BabelTranslator {
     constructor() {
         this.socket = this.startSocket();
     }
-    startSerial() {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                // some condition to find the right port
-                const portName = 'COM7'; // Replace with logic to find the correct port
-                this.serialPort = yield openPort(portName, 115200);
-                this.parser = this.serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
-                this.parser.on('data', this.handleSerialMessage.bind(this));
-                this.serialPort.write('RQT:0x01:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
-            }
-            catch (error) {
-                console.error('Failed to start serial port:', error);
-            }
-        });
+    async startSerial() {
+        try {
+            // some condition to find the right port
+            const portName = 'COM7'; // Replace with logic to find the correct port
+            this.serialPort = await openPort(portName, 115200);
+            this.parser = this.serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
+            this.parser.on('data', this.handleSerialMessage.bind(this));
+            this.serialPort.write('RQT:0x01:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
+        }
+        catch (error) {
+            console.error('Failed to start serial port:', error);
+        }
     }
     startSocket() {
         const socket = new ws_1.default.Server({ port: 9000 });
@@ -266,11 +253,13 @@ function combineValue(valueArr, datatype) {
         //unsupported
         case 'fl32':
             //4 bytes forget the first occurence of 0x
+            tmp = valueArr;
+            console.log(tmp);
             let fl32buffer = new ArrayBuffer(4);
             let fl32view = new DataView(fl32buffer);
             //remove first location
-            valueArr.shift();
-            let fl32 = valueArr.map(byte => parseInt(byte, 16));
+            tmp.shift();
+            let fl32 = tmp.map(byte => parseInt(byte, 16));
             fl32.forEach((byte, index) => {
                 fl32view.setInt8(index, byte);
             });

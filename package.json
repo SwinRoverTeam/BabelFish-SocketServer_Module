@@ -9,13 +9,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@types/node": "^20.14.11",
     "serialport": "^13.0.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.7.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.13"
+    "@types/ws": "^8.5.13",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3",
+    "@types/node": "^20.14.11"
   }
 }

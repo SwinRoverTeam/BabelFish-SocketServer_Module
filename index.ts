@@ -297,17 +297,19 @@ function combineValue(valueArr: string[], datatype: string) {
 
         case 'fl32':
             //4 bytes forget the first occurence of 0x
+            tmp = valueArr
+            console.log(tmp);
             let fl32buffer = new ArrayBuffer(4);
             let fl32view = new DataView(fl32buffer);
             //remove first location
-            valueArr.shift();
-            let fl32 = valueArr.map(byte => parseInt(byte, 16));
+            tmp.shift();
+            let fl32 = tmp.map(byte => parseInt(byte, 16));
             fl32.forEach((byte, index) => {
                 fl32view.setInt8(index, byte);
             });
             return parseFloat(fl32view.getFloat32(0).toPrecision(6));
         case 'fl64':
             //Unsuppported
-            break;
+            break;  
     }
 }
