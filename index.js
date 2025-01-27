@@ -47,11 +47,14 @@ class BabelTranslator {
             // some condition to find the right port
             const portName = '/dev/ttyAMA0'; // Replace with logic to find the correct port
             this.serialPort = await openPort(portName, 115200);
+            //send UNC to start
+            this.serialPort.write('UNC:0x00:0x00:0x00:0x00:0x00:0x00:0x00:0x00\n');
             this.parser = this.serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
             this.parser.on('data', this.handleSerialMessage.bind(this));
+            //Test
             setInterval(() => {
                 var _a;
-                (_a = this.serialPort) === null || _a === void 0 ? void 0 : _a.write('RQT:0x01:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
+                (_a = this.serialPort) === null || _a === void 0 ? void 0 : _a.write('RQT:0x00:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
             }, 2000);
         }
         catch (error) {

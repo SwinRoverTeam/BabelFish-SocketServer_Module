@@ -70,10 +70,13 @@ class BabelTranslator {
             // some condition to find the right port
             const portName = '/dev/ttyAMA0'; // Replace with logic to find the correct port
             this.serialPort = await openPort(portName, 115200);
+            //send UNC to start
+            this.serialPort.write('UNC:0x00:0x00:0x00:0x00:0x00:0x00:0x00:0x00\n');
             this.parser = this.serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
             this.parser.on('data', this.handleSerialMessage.bind(this));
+            //Test
             setInterval(() => {
-                this.serialPort?.write('RQT:0x01:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
+                this.serialPort?.write('RQT:0x00:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
             }, 2000);
         } catch (error) {
             console.error('Failed to start serial port:', error);
