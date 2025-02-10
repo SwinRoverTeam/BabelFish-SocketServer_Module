@@ -68,7 +68,7 @@ class BabelTranslator {
     async startSerial() {
         try {
             // some condition to find the right port
-            const portName = '/dev/ttyAMA0'; // Replace with logic to find the correct port
+            const portName = '/dev/ttyACM0'; // Replace with logic to find the correct port
             this.serialPort = await openPort(portName, 115200);
             //send UNC to start
             this.serialPort.write('UNC:0x00:0x00:0x00:0x00:0x00:0x00:0x00:0x00\n');
