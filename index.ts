@@ -4,9 +4,109 @@ import WebSocket from 'ws';
 const { ReadlineParser } = require('@serialport/parser-readline');
 import { SerialPort } from "serialport";
 import ChildProcess from "child_process";
+import SysInfo from 'systeminformation';
 
 //const command = `ffmpeg -f v4l2 -i /dev/video0 -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream1`;
 
+
+type Param = {
+    name: string // name (intended for wetware)
+    Value: string // value
+    datatype: string // data type
+}
+type Target = {
+    name: string // name (intended for wetware)
+    Value: string // value
+    Target: string // target
+    datatype: string // data type
+}
+let BabelParams: Param[] = [
+    {
+        name: 'CPU_TEMP',
+        Value: '0',
+        datatype: 'int8'
+    },
+    {
+        name: 'CPU_LOAD',
+        Value: '0',
+        datatype: 'int8'
+    },
+    {
+        name: 'NET_RSSI',
+        Value: '0',
+        datatype: 'int8'
+    },
+    {
+        name: 'NET_TX',
+        Value: '0',
+        datatype: 'int8'
+    }
+
+
+];
+let BabelTargets: Target[] = [
+    {
+        name: 'Camera1',
+        Value: '0',
+        Target: '0',
+        datatype: 'int8'
+    },
+    {
+        name: 'Camera2',
+        Value: '0',
+        Target: '0',
+        datatype: 'int8'
+    }
+];
+
+function setTarget(tname: string, value: string) {
+    const index = BabelTargets.findIndex(target => target.name === tname)
+    if (index !== -1) {
+        BabelTargets[index].Target = value;
+    }
+}
+function readValue(vname: string) {
+    const index = BabelParams.findIndex(param => param.name === vname)
+    if (index !== -1) {
+        return BabelParams[index].Value;
+    }
+    return '';
+}
+function readTarget(tname: string) {
+    const index = BabelTargets.findIndex(target => target.name === tname)
+    if (index !== -1) {
+        return BabelTargets[index].Target;
+    }
+    return null;
+}
+
+const Datatypes = [
+    'int8',
+    'uint8',
+    'int16',
+    'uint16',
+    'int32',
+    'int64',
+    'float16',
+    'float32',
+    'float64',
+    'bool',
+    'ascii',
+];
+type babelJson = {
+    CMD: string,
+    Data: {
+        MID?: string,
+        PNo?: string,
+        TNo?: string,
+        PID?: string,
+        TID?: string,
+        Value?: string,
+        Target?: string,
+        datatype?: string,
+        ERR?: string
+    }
+}
 
 class CameraStream {
     ffmpeg: ChildProcess.ChildProcess | null = null;
@@ -37,7 +137,7 @@ class CameraStream {
                 });
                 resolve(true);
             }
-            
+
         });
     }
     stop() {
@@ -61,33 +161,7 @@ const cameras = [
 ]
 
 
-const Datatypes = [
-    'int8',
-    'uint8',
-    'int16',
-    'uint16',
-    'int32',
-    'int64',
-    'float16',
-    'float32',
-    'float64',
-    'bool',
-    'ascii',
-];
-type babelJson = {
-    CMD: string,
-    Data: {
-        MID?: string,
-        PNo?: string,
-        TNo?: string,
-        PID?: string,
-        TID?: string,
-        Value?: string,
-        Target?: string,
-        datatype?: string,
-        ERR?: string
-    }
-}
+
 
 function openPort(port: string, baud: number): Promise<SerialPort> {
     return new Promise((resolve, reject) => {
@@ -118,16 +192,12 @@ class BabelTranslator {
     async startSerial() {
         try {
             // some condition to find the right port
-           
+
             this.serialPort = await openPort(portName, 115200);
             //send UNC to start
             this.serialPort.write('UNC:0x00:0x00:0x00:0x00:0x00:0x00:0x00:0x00\n');
             this.parser = this.serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
             this.parser.on('data', this.handleSerialMessage.bind(this));
-            //Test
-            setInterval(() => {
-                this.serialPort?.write('RQT:0x00:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
-            }, 2000);
         } catch (error) {
             console.error('Failed to start serial port:', error);
         }
@@ -136,12 +206,26 @@ class BabelTranslator {
     startSocket() {
         const socket = new WebSocket.Server({ port: 9000 });
         console.log('WebSocket server is listening on port 9000');
+        let int;
         socket.on('connection', (ws) => {
             //ws.on('message', this.handleSocketMessage.bind(this));
             setInterval(() => {
+                this.sendSocketMessage({
+                    CMD: 'WHO',
+                    Data: {
+                        MID: MID,
+                        PNo: '0x00',
+                        TNo: '0x00',
+                    }
+                });
+            }, 10000)
 
-            },1000)
         });
+        socket.on('close', () => {
+            console.log('WebSocket server closed');
+            clearInterval(int);
+        }
+        );
         return socket;
     }
 
@@ -175,9 +259,9 @@ class BabelTranslator {
         let JSONMessage = GenCommand(message);
         //send to socket
         this.sendSocketMessage(JSONMessage);
-        
+
     }
-    sendSocketMessage(message:babelJson){
+    sendSocketMessage(message: babelJson) {
         console.log('Sending message to socket:', message);
         if (message.CMD !== '') {
             this.socket.clients.forEach(client => {
@@ -188,25 +272,44 @@ class BabelTranslator {
             });
         }
     }
-    handleInternalMessage(message:babelJson){
-        switch (message.CMD){
+    handleInternalMessage(message: babelJson) {
+        switch (message.CMD) {
+            case 'RQT':
+                switch (message.Data.PID) {
+                    case '0x00':
+                        //request CPU temp
+                        setTarget('CPU_TEMP', readValue('CPU_TEMP'));
+                        break;
+                    case '0x01':
+                        //request CPU load
+                        setTarget('CPU_LOAD', readValue('CPU_LOAD'));
+                        break;
+                    case '0x02':
+                        //request wifi RSSI
+                        setTarget('NET_RSSI', readValue('NET_RSSI'));
+                        break;
+                    case '0x03':
+                        //request wifi TX
+                        setTarget('NET_TX', readValue('NET_TX'));
+                        break;
+                }
             case 'SET':
-                switch (message.Data.TID){
+                switch (message.Data.TID) {
                     case '0x00':
                         //switch cam 1
                         const setpoint = message.Data.Target
-                        if (setpoint){
+                        if (setpoint) {
                             cameras[0].switchCamera(parseInt(setpoint))
                         }
-                        
+
                         break;
                     case '0x01':
                         //switch cam 2
                         const setpoint1 = message.Data.Target
-                        if (setpoint1){
+                        if (setpoint1) {
                             cameras[1].switchCamera(parseInt(setpoint1))
                         }
-                        
+
                         break;
                 }
                 break;
@@ -404,6 +507,30 @@ function combineValue(valueArr: string[], datatype: string) {
     }
 }
 
+async function fetchInternals() {
+    setInterval(async() => {
+        //fetch CPU temp
+        let temp = await SysInfo.cpuTemperature();
+        setTarget('CPU_TEMP', temp.main.toString());
+        //fetch CPU load
+        let load = await SysInfo.currentLoad();
+        setTarget('CPU_LOAD', load.currentLoad.toFixed(2));
+        //Get wifi stats
+        let wifi = await SysInfo.wifiConnections();
+        wifi = wifi.filter((wifi) => wifi.ssid === 'Swinburne Rover Team');
+        if (wifi.length === 0) {
+             //fetch Network usage
+            let net = await SysInfo.networkStats();
+            net = net.filter((net) => net.iface === 'eth0');
+            setTarget('NET_RSSI', net[0].rx_sec.toString());
+            setTarget('NET_TX', net[0].tx_sec.toString());
+        } else {
+            setTarget('NET_RSSI', wifi[0].signalLevel.toString());
+            setTarget('NET_TX', wifi[0].txRate.toString());
+        }
+        
+    }, 1000);
+}
 
 async function main() {
     const translator = new BabelTranslator();

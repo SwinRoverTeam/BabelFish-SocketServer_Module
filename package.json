@@ -10,12 +10,13 @@
   "license": "ISC",
   "dependencies": {
     "serialport": "^13.0.0",
+    "systeminformation": "^5.25.11",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/node": "^20.14.11",
     "@types/ws": "^8.5.13",
     "ts-node": "^10.9.2",
-    "typescript": "^5.7.3",
-    "@types/node": "^20.14.11"
+    "typescript": "^5.7.3"
   }
 }
