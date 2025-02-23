@@ -3,6 +3,62 @@
 import WebSocket from 'ws';
 const { ReadlineParser } = require('@serialport/parser-readline');
 import { SerialPort } from "serialport";
+import ChildProcess from "child_process";
+
+//const command = `ffmpeg -f v4l2 -i /dev/video0 -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream1`;
+
+
+class CameraStream {
+    ffmpeg: ChildProcess.ChildProcess | null = null;
+    cameraNumber: number;
+    streamNumber: number;
+    constructor(cameraInit: number = 0, streamInit: number = 0) {
+        this.streamNumber = streamInit;
+        this.cameraNumber = cameraInit;
+    }
+    start() {
+        return new Promise((resolve, reject) => {
+            const command = `ffmpeg -f v4l2 -i /dev/video${this.cameraNumber} -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream${this.streamNumber}`;
+            this.ffmpeg = ChildProcess.spawn(command, {
+                shell: true,
+            });
+            if (!this.ffmpeg) {
+                reject("Failed to start ffmpeg");
+            } else {
+                this.ffmpeg.stdout?.on("data", (data) => {
+                    console.log(`stdout: ${data}`);
+                });
+                this.ffmpeg.stderr?.on("data", (data) => {
+                    console.log(`stderr: ${data}`);
+                });
+                this.ffmpeg.on("close", (code) => {
+                    this.ffmpeg?.removeAllListeners();
+                    console.log(`child process exited with code ${code}`);
+                });
+                resolve(true);
+            }
+            
+        });
+    }
+    stop() {
+        if (this.ffmpeg) {
+            this.ffmpeg.kill();
+        }
+    }
+    async switchCamera(CameraNumber: number) {
+        this.cameraNumber = CameraNumber;
+        this.stop();
+        await this.start();
+    }
+}
+
+
+const MID = "0x01";
+const portName = '/dev/ttyACM0'; // Replace with logic to find the correct port
+const cameras = [
+    new CameraStream(0, 0),
+    new CameraStream(0, 1),
+]
 
 
 const Datatypes = [
@@ -50,12 +106,6 @@ function openPort(port: string, baud: number): Promise<SerialPort> {
 }
 
 
-
-async function main() {
-    const translator = new BabelTranslator();
-    await translator.startSerial();
-}
-
 class BabelTranslator {
     socket: WebSocket.Server;
     serialPort: SerialPort | undefined;
@@ -68,7 +118,7 @@ class BabelTranslator {
     async startSerial() {
         try {
             // some condition to find the right port
-            const portName = '/dev/ttyACM0'; // Replace with logic to find the correct port
+           
             this.serialPort = await openPort(portName, 115200);
             //send UNC to start
             this.serialPort.write('UNC:0x00:0x00:0x00:0x00:0x00:0x00:0x00:0x00\n');
@@ -88,6 +138,9 @@ class BabelTranslator {
         console.log('WebSocket server is listening on port 9000');
         socket.on('connection', (ws) => {
             //ws.on('message', this.handleSocketMessage.bind(this));
+            setInterval(() => {
+
+            },1000)
         });
         return socket;
     }
@@ -97,6 +150,12 @@ class BabelTranslator {
         // Handle incoming WebSocket message and make it into serial message
         //Message structure "CMD:Data1:Data2:Data3:Data4:Data5:Data6:Data7:Data8"
         //some need to be cracked down into bytes eg 500 to 2 bytes 0x01 0xF4 but as strings
+        if (message.Data.MID !== undefined) {
+            //handle messge intended for me
+            if (message.Data.MID === MID) {
+                this.handleInternalMessage(message);
+            }
+        }
         let messageString = GenSerialCommand(message);
         //send to serial
         if (this.serialPort) {
@@ -115,19 +174,45 @@ class BabelTranslator {
         console.log('Message is valid');
         let JSONMessage = GenCommand(message);
         //send to socket
-        console.log('Sending message to socket:', JSONMessage);
-        if (JSONMessage.CMD !== '') {
+        this.sendSocketMessage(JSONMessage);
+        
+    }
+    sendSocketMessage(message:babelJson){
+        console.log('Sending message to socket:', message);
+        if (message.CMD !== '') {
             this.socket.clients.forEach(client => {
                 if (client.readyState === client.OPEN) {
-                    console.log('Sending message to socket:', JSONMessage);
-                    client.send(JSON.stringify(JSONMessage));
+                    console.log('Sending message to socket:', message);
+                    client.send(JSON.stringify(message));
                 }
             });
         }
     }
+    handleInternalMessage(message:babelJson){
+        switch (message.CMD){
+            case 'SET':
+                switch (message.Data.TID){
+                    case '0x00':
+                        //switch cam 1
+                        const setpoint = message.Data.Target
+                        if (setpoint){
+                            cameras[0].switchCamera(parseInt(setpoint))
+                        }
+                        
+                        break;
+                    case '0x01':
+                        //switch cam 2
+                        const setpoint1 = message.Data.Target
+                        if (setpoint1){
+                            cameras[1].switchCamera(parseInt(setpoint1))
+                        }
+                        
+                        break;
+                }
+                break;
+        }
+    }
 }
-
-main().catch(console.error);
 
 /*
 let JSONCommand = {
@@ -318,3 +403,12 @@ function combineValue(valueArr: string[], datatype: string) {
             break;
     }
 }
+
+
+async function main() {
+    const translator = new BabelTranslator();
+    //await translator.startSerial();
+    cameras[0].start
+    cameras[1].start
+}
+main().catch(console.error);
