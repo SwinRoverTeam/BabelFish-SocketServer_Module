@@ -7,7 +7,15 @@ import ChildProcess from "child_process";
 import SysInfo from 'systeminformation';
 
 //const command = `ffmpeg -f v4l2 -i /dev/video0 -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream1`;
+// const command = `ffmpeg -f dshow -i video="Your Webcam Name" -c:v libx264 -f rtsp rtsp://0.0.0.0:8554/stream1`;
 
+let OS: string;
+SysInfo.osInfo().then((data) => {
+    OS = data.platform;
+});
+
+const MID = "0x01";
+const portName = '/dev/ttyACM0'; // Replace with logic to find the correct port
 
 type Param = {
     name: string // name (intended for wetware)
@@ -118,7 +126,18 @@ class CameraStream {
     }
     start() {
         return new Promise((resolve, reject) => {
-            const command = `ffmpeg -f v4l2 -i /dev/video${this.cameraNumber} -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream${this.streamNumber}`;
+            let command;
+            switch (OS) {
+                case 'Windows':
+                    command = `ffmpeg -f dshow -i video="HP HD Camera" -c:v libx264 -f rtsp rtsp://0.0.0.0:8554/stream${this.streamNumber}`;
+                    break;
+                case 'Linux':
+                    command = `ffmpeg -f v4l2 -i /dev/video${this.cameraNumber} -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream${this.streamNumber}`;
+                    break;
+                default:
+                    console.error('Unsupported OS');
+                    return;
+            }
             this.ffmpeg = ChildProcess.spawn(command, {
                 shell: true,
             });
@@ -153,8 +172,6 @@ class CameraStream {
 }
 
 
-const MID = "0x01";
-const portName = '/dev/ttyACM0'; // Replace with logic to find the correct port
 const cameras = [
     new CameraStream(0, 0),
     new CameraStream(0, 1),
@@ -508,27 +525,35 @@ function combineValue(valueArr: string[], datatype: string) {
 }
 
 async function fetchInternals() {
-    setInterval(async() => {
+    setInterval(async () => {
         //fetch CPU temp
-        let temp = await SysInfo.cpuTemperature();
-        setTarget('CPU_TEMP', temp.main.toString());
-        //fetch CPU load
-        let load = await SysInfo.currentLoad();
-        setTarget('CPU_LOAD', load.currentLoad.toFixed(2));
+        SysInfo.cpuTemperature().then((data) => {
+            //console.log(data);
+            setTarget('CPU_TEMP', data.main.toString());
+        });
+        SysInfo.currentLoad().then((data) => {
+            //console.log(data);
+            setTarget('CPU_LOAD', data.currentLoad.toFixed(2).toString());
+        });
         //Get wifi stats
-        let wifi = await SysInfo.wifiConnections();
-        wifi = wifi.filter((wifi) => wifi.ssid === 'Swinburne Rover Team');
-        if (wifi.length === 0) {
-             //fetch Network usage
-            let net = await SysInfo.networkStats();
-            net = net.filter((net) => net.iface === 'eth0');
-            setTarget('NET_RSSI', net[0].rx_sec.toString());
-            setTarget('NET_TX', net[0].tx_sec.toString());
-        } else {
-            setTarget('NET_RSSI', wifi[0].signalLevel.toString());
-            setTarget('NET_TX', wifi[0].txRate.toString());
-        }
-        
+        SysInfo.wifiConnections().then((data) => {
+            let wifi = data.filter((wifi) => wifi.ssid === 'Swinburne Rover Team');
+            if (wifi.length === 0) {
+                //fetch Network usage
+                SysInfo.networkStats().then((data) => {
+                    //console.log(data);
+                    const rx = data[0].rx_sec;
+                    const tx = data[0].tx_sec;
+                    if (rx || tx) {
+                        setTarget('NET_RSSI', rx.toString());
+                        setTarget('NET_TX', tx.toString());
+                    }
+                });
+            } else {
+                setTarget('NET_RSSI', wifi[0].signalLevel.toString());
+                setTarget('NET_TX', wifi[0].txRate.toString());
+            }
+        });
     }, 1000);
 }
 
@@ -537,5 +562,6 @@ async function main() {
     //await translator.startSerial();
     cameras[0].start
     cameras[1].start
+    fetchInternals();
 }
 main().catch(console.error);

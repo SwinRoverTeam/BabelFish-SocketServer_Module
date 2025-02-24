@@ -7,6 +7,72 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const ws_1 = __importDefault(require("ws"));
 const { ReadlineParser } = require('@serialport/parser-readline');
 const serialport_1 = require("serialport");
+const child_process_1 = __importDefault(require("child_process"));
+const systeminformation_1 = __importDefault(require("systeminformation"));
+//const command = `ffmpeg -f v4l2 -i /dev/video0 -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream1`;
+// const command = `ffmpeg -f dshow -i video="Your Webcam Name" -c:v libx264 -f rtsp rtsp://0.0.0.0:8554/stream1`;
+let OS;
+systeminformation_1.default.osInfo().then((data) => {
+    OS = data.platform;
+});
+const MID = "0x01";
+const portName = '/dev/ttyACM0'; // Replace with logic to find the correct port
+let BabelParams = [
+    {
+        name: 'CPU_TEMP',
+        Value: '0',
+        datatype: 'int8'
+    },
+    {
+        name: 'CPU_LOAD',
+        Value: '0',
+        datatype: 'int8'
+    },
+    {
+        name: 'NET_RSSI',
+        Value: '0',
+        datatype: 'int8'
+    },
+    {
+        name: 'NET_TX',
+        Value: '0',
+        datatype: 'int8'
+    }
+];
+let BabelTargets = [
+    {
+        name: 'Camera1',
+        Value: '0',
+        Target: '0',
+        datatype: 'int8'
+    },
+    {
+        name: 'Camera2',
+        Value: '0',
+        Target: '0',
+        datatype: 'int8'
+    }
+];
+function setTarget(tname, value) {
+    const index = BabelTargets.findIndex(target => target.name === tname);
+    if (index !== -1) {
+        BabelTargets[index].Target = value;
+    }
+}
+function readValue(vname) {
+    const index = BabelParams.findIndex(param => param.name === vname);
+    if (index !== -1) {
+        return BabelParams[index].Value;
+    }
+    return '';
+}
+function readTarget(tname) {
+    const index = BabelTargets.findIndex(target => target.name === tname);
+    if (index !== -1) {
+        return BabelTargets[index].Target;
+    }
+    return null;
+}
 const Datatypes = [
     'int8',
     'uint8',
@@ -19,6 +85,64 @@ const Datatypes = [
     'float64',
     'bool',
     'ascii',
+];
+class CameraStream {
+    constructor(cameraInit = 0, streamInit = 0) {
+        this.ffmpeg = null;
+        this.streamNumber = streamInit;
+        this.cameraNumber = cameraInit;
+    }
+    start() {
+        return new Promise((resolve, reject) => {
+            var _a, _b;
+            let command;
+            switch (OS) {
+                case 'Windows':
+                    command = `ffmpeg -f dshow -i video="HP HD Camera" -c:v libx264 -f rtsp rtsp://0.0.0.0:8554/stream${this.streamNumber}`;
+                    break;
+                case 'Linux':
+                    command = `ffmpeg -f v4l2 -i /dev/video${this.cameraNumber} -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream${this.streamNumber}`;
+                    break;
+                default:
+                    console.error('Unsupported OS');
+                    return;
+            }
+            this.ffmpeg = child_process_1.default.spawn(command, {
+                shell: true,
+            });
+            if (!this.ffmpeg) {
+                reject("Failed to start ffmpeg");
+            }
+            else {
+                (_a = this.ffmpeg.stdout) === null || _a === void 0 ? void 0 : _a.on("data", (data) => {
+                    console.log(`stdout: ${data}`);
+                });
+                (_b = this.ffmpeg.stderr) === null || _b === void 0 ? void 0 : _b.on("data", (data) => {
+                    console.log(`stderr: ${data}`);
+                });
+                this.ffmpeg.on("close", (code) => {
+                    var _a;
+                    (_a = this.ffmpeg) === null || _a === void 0 ? void 0 : _a.removeAllListeners();
+                    console.log(`child process exited with code ${code}`);
+                });
+                resolve(true);
+            }
+        });
+    }
+    stop() {
+        if (this.ffmpeg) {
+            this.ffmpeg.kill();
+        }
+    }
+    async switchCamera(CameraNumber) {
+        this.cameraNumber = CameraNumber;
+        this.stop();
+        await this.start();
+    }
+}
+const cameras = [
+    new CameraStream(0, 0),
+    new CameraStream(0, 1),
 ];
 function openPort(port, baud) {
     return new Promise((resolve, reject) => {
@@ -34,10 +158,6 @@ function openPort(port, baud) {
         });
     });
 }
-async function main() {
-    const translator = new BabelTranslator();
-    await translator.startSerial();
-}
 class BabelTranslator {
     constructor() {
         this.socket = this.startSocket();
@@ -45,17 +165,11 @@ class BabelTranslator {
     async startSerial() {
         try {
             // some condition to find the right port
-            const portName = '/dev/ttyACM0'; // Replace with logic to find the correct port
             this.serialPort = await openPort(portName, 115200);
             //send UNC to start
             this.serialPort.write('UNC:0x00:0x00:0x00:0x00:0x00:0x00:0x00:0x00\n');
             this.parser = this.serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
             this.parser.on('data', this.handleSerialMessage.bind(this));
-            //Test
-            setInterval(() => {
-                var _a;
-                (_a = this.serialPort) === null || _a === void 0 ? void 0 : _a.write('RQT:0x00:0x01:0x00:0x00:0x00:0x00:0x00:0x00\n');
-            }, 2000);
         }
         catch (error) {
             console.error('Failed to start serial port:', error);
@@ -64,8 +178,23 @@ class BabelTranslator {
     startSocket() {
         const socket = new ws_1.default.Server({ port: 9000 });
         console.log('WebSocket server is listening on port 9000');
+        let int;
         socket.on('connection', (ws) => {
             //ws.on('message', this.handleSocketMessage.bind(this));
+            setInterval(() => {
+                this.sendSocketMessage({
+                    CMD: 'WHO',
+                    Data: {
+                        MID: MID,
+                        PNo: '0x00',
+                        TNo: '0x00',
+                    }
+                });
+            }, 10000);
+        });
+        socket.on('close', () => {
+            console.log('WebSocket server closed');
+            clearInterval(int);
         });
         return socket;
     }
@@ -74,6 +203,12 @@ class BabelTranslator {
         // Handle incoming WebSocket message and make it into serial message
         //Message structure "CMD:Data1:Data2:Data3:Data4:Data5:Data6:Data7:Data8"
         //some need to be cracked down into bytes eg 500 to 2 bytes 0x01 0xF4 but as strings
+        if (message.Data.MID !== undefined) {
+            //handle messge intended for me
+            if (message.Data.MID === MID) {
+                this.handleInternalMessage(message);
+            }
+        }
         let messageString = GenSerialCommand(message);
         //send to serial
         if (this.serialPort) {
@@ -91,18 +226,61 @@ class BabelTranslator {
         console.log('Message is valid');
         let JSONMessage = GenCommand(message);
         //send to socket
-        console.log('Sending message to socket:', JSONMessage);
-        if (JSONMessage.CMD !== '') {
+        this.sendSocketMessage(JSONMessage);
+    }
+    sendSocketMessage(message) {
+        console.log('Sending message to socket:', message);
+        if (message.CMD !== '') {
             this.socket.clients.forEach(client => {
                 if (client.readyState === client.OPEN) {
-                    console.log('Sending message to socket:', JSONMessage);
-                    client.send(JSON.stringify(JSONMessage));
+                    console.log('Sending message to socket:', message);
+                    client.send(JSON.stringify(message));
                 }
             });
         }
     }
+    handleInternalMessage(message) {
+        switch (message.CMD) {
+            case 'RQT':
+                switch (message.Data.PID) {
+                    case '0x00':
+                        //request CPU temp
+                        setTarget('CPU_TEMP', readValue('CPU_TEMP'));
+                        break;
+                    case '0x01':
+                        //request CPU load
+                        setTarget('CPU_LOAD', readValue('CPU_LOAD'));
+                        break;
+                    case '0x02':
+                        //request wifi RSSI
+                        setTarget('NET_RSSI', readValue('NET_RSSI'));
+                        break;
+                    case '0x03':
+                        //request wifi TX
+                        setTarget('NET_TX', readValue('NET_TX'));
+                        break;
+                }
+            case 'SET':
+                switch (message.Data.TID) {
+                    case '0x00':
+                        //switch cam 1
+                        const setpoint = message.Data.Target;
+                        if (setpoint) {
+                            cameras[0].switchCamera(parseInt(setpoint));
+                        }
+                        break;
+                    case '0x01':
+                        //switch cam 2
+                        const setpoint1 = message.Data.Target;
+                        if (setpoint1) {
+                            cameras[1].switchCamera(parseInt(setpoint1));
+                        }
+                        break;
+                }
+                break;
+        }
+    }
 }
-main().catch(console.error);
 /*
 let JSONCommand = {
         CMD: 'MOV',
@@ -275,3 +453,44 @@ function combineValue(valueArr, datatype) {
             break;
     }
 }
+async function fetchInternals() {
+    setInterval(async () => {
+        //fetch CPU temp
+        systeminformation_1.default.cpuTemperature().then((data) => {
+            //console.log(data);
+            setTarget('CPU_TEMP', data.main.toString());
+        });
+        systeminformation_1.default.currentLoad().then((data) => {
+            //console.log(data);
+            setTarget('CPU_LOAD', data.currentLoad.toFixed(2).toString());
+        });
+        //Get wifi stats
+        systeminformation_1.default.wifiConnections().then((data) => {
+            let wifi = data.filter((wifi) => wifi.ssid === 'Swinburne Rover Team');
+            if (wifi.length === 0) {
+                //fetch Network usage
+                systeminformation_1.default.networkStats().then((data) => {
+                    //console.log(data);
+                    const rx = data[0].rx_sec;
+                    const tx = data[0].tx_sec;
+                    if (rx || tx) {
+                        setTarget('NET_RSSI', rx.toString());
+                        setTarget('NET_TX', tx.toString());
+                    }
+                });
+            }
+            else {
+                setTarget('NET_RSSI', wifi[0].signalLevel.toString());
+                setTarget('NET_TX', wifi[0].txRate.toString());
+            }
+        });
+    }, 1000);
+}
+async function main() {
+    const translator = new BabelTranslator();
+    //await translator.startSerial();
+    cameras[0].start;
+    cameras[1].start;
+    fetchInternals();
+}
+main().catch(console.error);
